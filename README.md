@@ -1,6 +1,26 @@
 # KG-MMRAG
 A repo for sharing codes concerning multimodal retrieval-augmented generation with knowledge graph.
 
+## ScienceQA Folder
+Reference: [https://github.com/lupantech/ScienceQA][https://github.com/lupantech/ScienceQA]
+
+To use GPT, prepare your API key:
+```
+export OPENAI_API_KEY="your_api_key_here"
+```
+
+To run GPT model it will store results in folder `results`
+```
+python3 run_gpt.py
+```
+
+Please remember to comment out this code in `run_gpt.py` when running full experiment:
+```
+# COMMENT THIS WHEN RUN FULL EXPERIMENT THIS CODE JUST FOR TESTING
+cnt += 1
+if cnt == 10:
+    break
+```
 ## Useful Resources
 
 ### Papers:
