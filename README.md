@@ -2,7 +2,7 @@
 A repo for sharing codes concerning multimodal retrieval-augmented generation with knowledge graph.
 
 ## ScienceQA Folder
-Reference: [https://github.com/lupantech/ScienceQA][https://github.com/lupantech/ScienceQA]
+Reference: [https://github.com/lupantech/ScienceQA](https://github.com/lupantech/ScienceQA)
 
 To use GPT, prepare your API key:
 ```
