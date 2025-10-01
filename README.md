@@ -14,13 +14,17 @@ To run GPT model it will store results in folder `results`
 python3 run_gpt.py
 ```
 
-Please remember to comment out this code in `run_gpt.py` when running full experiment:
+Or 
 ```
-# COMMENT THIS WHEN RUN FULL EXPERIMENT THIS CODE JUST FOR TESTING
-cnt += 1
-if cnt == 10:
-    break
+python3 run_multimodal_gpt.py
 ```
+
+Please remember to change `test_number` in `args` to -1 in `run_gpt.py` and `run_multimodal_gpt.py` when running full experiment.
+
+Note:
+- `run_gpt.py` use image's caption as input.
+- `run_multimodal_gpt.py` use image as input.
+
 ## Useful Resources
 
 ### Papers:

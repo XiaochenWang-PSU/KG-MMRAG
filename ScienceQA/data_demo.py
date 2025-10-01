@@ -8,6 +8,8 @@ print("Choices:", example["choices"])
 print("Text context:", example["hint"])
 
 # Display the image using matplotlib
+image = example["image"]
+print(image.format)
 plt.imshow(example["image"])
 plt.axis('off')  # Turn off axis numbers
 plt.show()

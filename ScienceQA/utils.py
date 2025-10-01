@@ -1,3 +1,6 @@
+import base64
+from io import BytesIO
+
 def get_question_text(problem):
     question = problem['question']
     return question
@@ -11,6 +14,12 @@ def get_context_text(problem, use_caption):
         context = "N/A"
     return context
 
+def get_context_multimodal(problem, use_caption):
+    hint = problem['hint']
+    base64_image = pil2base64(problem['image']) if problem['image'] else None
+    if hint == "":
+        hint = "N/A"
+    return hint, base64_image
 
 def get_choice_text(probelm, options):
     choices = probelm['choices']
@@ -138,3 +147,60 @@ def build_prompt(problems, shot_qids, test_qid, args):
     prompt_input = '\n\n'.join(examples)
 
     return prompt_input
+
+def build_prompt_multimodal(shots, problem, args):
+
+    examples = []
+    base64_images = []
+
+    # n-shot training examples
+    for shot in shots:
+        question = get_question_text(shot)
+        hint, base64_image = get_context_multimodal(shot, args.use_caption)
+        if base64_image:
+            base64_images.append(base64_image)
+        choice = get_choice_text(shot, args.options)
+        answer = get_answer(shot, args.options)
+        lecture = get_lecture_text(shot)
+        solution = get_solution_text(shot)
+
+        train_example = create_one_example(args.prompt_format,
+                                           question,
+                                           hint,
+                                           choice,
+                                           answer,
+                                           lecture,
+                                           solution,
+                                           test_example=False)
+        examples.append(train_example)
+
+    # test example
+    question = get_question_text(problem)
+    hint, base64_image = get_context_multimodal(problem, args.use_caption)
+    if base64_image:
+        base64_images.append(base64_image)
+    choice = get_choice_text(problem, args.options)
+    answer = get_answer(problem, args.options)
+    lecture = get_lecture_text(problem)
+    solution = get_solution_text(problem)
+
+    test_example = create_one_example(args.prompt_format,
+                                      question,
+                                      hint,
+                                      choice,
+                                      answer,
+                                      lecture,
+                                      solution,
+                                      test_example=True)
+    examples.append(test_example)
+
+    # create the prompt input
+    prompt_input = '\n\n'.join(examples)
+    return prompt_input, base64_images
+
+def pil2base64(img):
+    buf = BytesIO()
+    fmt = img.format
+    img.save(buf, format=fmt)
+    b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+    return b64

@@ -5,6 +5,7 @@ import argparse
 import random
 from tqdm import tqdm
 from utils import *
+from datasets import load_dataset
 
 import openai
 from openai import OpenAI
@@ -13,36 +14,31 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 client = OpenAI()
 
 def load_data(args):
-    problems = json.load(open(os.path.join(args.data_root, 'problems.json')))
-    pid_splits = json.load(open(os.path.join(args.data_root, 'pid_splits.json')))
-    captions = json.load(open(args.caption_file))["captions"]
+    train = load_dataset('derek-thomas/ScienceQA', split='train') # choose the test set
+    test = load_dataset('derek-thomas/ScienceQA', split='test')
+    # val = load_dataset('derek-thomas/ScienceQA', split='validation')
 
-    for qid in problems:
-        problems[qid]['caption'] = captions[qid] if qid in captions else ""
-        
-    qids = pid_splits['%s' % (args.test_split)]
-    qids = qids[:args.test_number] if args.test_number > 0 else qids
+    test = test.select(range(args.test_number)) if args.test_number > 0 else qids
 
     # pick up shot examples from the training set
-    shot_qids = args.shot_qids
-    train_qids = pid_splits['train']
-    if shot_qids == None:
-        assert args.shot_number >= 0 and args.shot_number <= 32
-        shot_qids = random.sample(train_qids, args.shot_number)  # random sample
-    else:
-        shot_qids = [str(qid) for qid in shot_qids]
-        for qid in shot_qids:
-            assert qid in train_qids  # check shot_qids
-    print("training question ids for prompting: ", shot_qids, "\n")
-
-    return problems, qids, shot_qids
+    shots = train.shuffle(args.seed).select(range(args.shot_number)) # random sample
+    
+    return test, shots
 
 
-def get_gpt_result(prompt, args):
+def get_gpt_result(prompt, base64_images, args):
+    content = [{ "type": "input_text", "text": f"{prompt}" }]
+    for base64_image in base64_images:
+        content.append({"type": "input_image","image_url": f"data:image/jpeg;base64,{base64_image}"})
 
     response = client.responses.create(
         model=args.model,
-        input=prompt,
+        input=[
+            {
+                "role": "user",
+                "content": content
+            }
+        ],
         temperature=args.temperature,
         max_output_tokens=args.max_tokens,  # note the new name
         top_p=args.top_p,
@@ -71,18 +67,17 @@ def get_pred_idx(prediction, choices, options):
 
 
 def get_result_file(args):
-    result_file = "{}/{}/{}_{}_{}_{}_seed_{}.json".format(args.output_root, args.model, args.label, args.test_split,
+    result_file = "{}/{}/{}_{}_{}_{}_seed_{}_multimodal.json".format(args.output_root, args.model, args.label, args.test_split,
                                                           args.prompt_format, args.shot_number, args.seed)
 
     return result_file
 
 
-def save_results(result_file, acc, correct, count, shot_qids, args, results, outputs):
+def save_results(result_file, acc, correct, count, args, results, outputs):
     data = {}
     data['acc'] = acc
     data['correct'] = correct
     data['count'] = count
-    data['shot_qids'] = shot_qids
     data['args'] = vars(args)
     data['results'] = results
     data['outputs'] = outputs
@@ -114,8 +109,7 @@ def parse_args():
                             'QCMLE-A', 'QCLM-A', 'QCEM-A', 'QCLEM-A', 'QCML-AE'
                         ],
                         help='prompt format template')
-    parser.add_argument('--shot_number', type=int, default=3, help='Number of n-shot training examples.')
-    parser.add_argument('--shot_qids', type=list, default=None, help='Question indexes of shot examples')
+    parser.add_argument('--shot_number', type=int, default=5, help='Number of n-shot training examples.')
     parser.add_argument('--seed', type=int, default=10, help='random seed')
     # GPT-3 settings
     parser.add_argument('--engine', type=str, default='text-davinci-002')
@@ -140,7 +134,7 @@ if __name__ == '__main__':
 
     random.seed(args.seed)
 
-    problems, qids, shot_qids = load_data(args)  # problems, test question ids, shot example ids
+    test, shots = load_data(args)  # problems, test question ids, shot example ids
 
     result_file = get_result_file(args)
 
@@ -152,26 +146,25 @@ if __name__ == '__main__':
         correct = check_point['correct']
         results = check_point['results']
         outputs = check_point['outputs']
-        print(f"{len(results)}/{len(qids)}, correct: {correct}, acc: {round(acc, 2)}%")
+        print(f"{len(results)}/{len(test)}, correct: {correct}, acc: {round(acc, 2)}%")
     else:
         correct = 0
         results = {}
         outputs = {}
 
-    # for qid in tqdm(qids):
-    for i, qid in enumerate(qids):
+    for qid, problem in enumerate(test):
         if qid in results:
             continue
 
-        choices = problems[qid]["choices"]
-        answer = problems[qid]["answer"]  # 0, 1, ..., 4
+        choices = problem["choices"]
+        answer = problem["answer"]  # 0, 1, ..., 4
         label = args.options[answer]  # 'A', ..., 'E'
 
         # generate prompt
-        prompt = build_prompt(problems, shot_qids, qid, args)
-
+        prompt, base64_images = build_prompt_multimodal(shots, problem, args)
+        
         # generate prediction
-        prediction, output = get_gpt_result(prompt, args)  # 'A', ..., 'E'
+        prediction, output = get_gpt_result(prompt, base64_images, args)  # 'A', ..., 'E'
         pred_idx = get_pred_idx(prediction, choices, args.options)  # 0, 1, ..., 4
 
         results[qid] = pred_idx
@@ -181,7 +174,7 @@ if __name__ == '__main__':
 
         acc = correct / len(results) * 100
 
-        if args.debug or i < 3:
+        if args.debug or qid < 3:
             print("##################################")
             print(prompt, "\n")
             print("# labeled answer:", label)
@@ -189,6 +182,6 @@ if __name__ == '__main__':
             print("# predicted index:", pred_idx)
             print("# predicted output:", output)
 
-        if (i + 1) % args.save_every == 0 or (i + 1) == len(qids):
-            print(f"{len(results)}/{len(qids)}, correct: {correct}, acc: {round(acc, 2)}%, saving to {result_file}")
-            save_results(result_file, acc, correct, i + 1, shot_qids, args, results, outputs)
+        if (qid + 1) % args.save_every == 0 or (qid + 1) == len(test):
+            print(f"{len(results)}/{len(test)}, correct: {correct}, acc: {round(acc, 2)}%, saving to {result_file}")
+            save_results(result_file, acc, correct, qid + 1, args, results, outputs)

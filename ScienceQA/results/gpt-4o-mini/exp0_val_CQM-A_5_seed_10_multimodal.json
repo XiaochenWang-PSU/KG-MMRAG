@@ -1,0 +1,57 @@
+{
+  "acc": 50.0,
+  "correct": 5,
+  "count": 10,
+  "args": {
+    "data_root": "data/scienceqa",
+    "output_root": "results",
+    "caption_file": "data/captions.json",
+    "model": "gpt-4o-mini",
+    "options": [
+      "A",
+      "B",
+      "C",
+      "D",
+      "E"
+    ],
+    "label": "exp0",
+    "test_split": "val",
+    "test_number": 10,
+    "use_caption": false,
+    "save_every": 10,
+    "debug": false,
+    "prompt_format": "CQM-A",
+    "shot_number": 5,
+    "seed": 10,
+    "engine": "text-davinci-002",
+    "temperature": 0.0,
+    "max_tokens": 512,
+    "top_p": 1.0,
+    "frequency_penalty": 0.0,
+    "presence_penalty": 0.0
+  },
+  "results": {
+    "0": 1,
+    "1": 1,
+    "2": 0,
+    "3": 1,
+    "4": 0,
+    "5": 0,
+    "6": 0,
+    "7": 1,
+    "8": 3,
+    "9": 4
+  },
+  "outputs": {
+    "0": "The answer is B.",
+    "1": "The answer is B. how steady a parachute with a 1 m vent was at 200 km per hour.",
+    "2": "The answer is A) Maryland.",
+    "3": "The answer is B.",
+    "4": "The answer is A) service.",
+    "5": "The answer is A) bilberry.",
+    "6": "The answer is A. 33 minutes.",
+    "7": "The answer is B. oxymoron.",
+    "8": "The answer is D. Both are chemical changes.",
+    "9": "To determine the expected ratio of offspring with a woolly fleece to those with a hairy fleece, we need to analyze the genetic cross provided in the Punnett square.\n\nGiven:\n- The allele for a hairy fleece (F) is dominant.\n- The allele for a woolly fleece (f) is recessive.\n\nFrom the Punnett square, if both parents are homozygous recessive (ff), all offspring will also be homozygous recessive (ff), resulting in a woolly fleece.\n\nThus, the expected ratio of offspring with a woolly fleece to those with a hairy fleece is:\n\n**Answer: (A) 0:4** (since all offspring will have a woolly fleece)."
+  }
+}
