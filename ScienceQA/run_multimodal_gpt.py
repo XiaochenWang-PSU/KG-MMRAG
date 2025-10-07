@@ -6,7 +6,6 @@ import random
 from tqdm import tqdm
 from utils import *
 from datasets import load_dataset
-
 import openai
 from openai import OpenAI
 
@@ -55,6 +54,27 @@ def get_gpt_result(prompt, base64_images, args):
 
     return answer, output
 
+def get_gpt_result_interleaved(segments, args):
+    response = client.responses.create(
+        model=args.model,  # e.g., "gpt-4o"
+        input=[{"role": "user", "content": segments}],
+        temperature=args.temperature,
+        max_output_tokens=args.max_tokens,
+        top_p=args.top_p,
+    )
+    output = response.output_text.strip()
+
+    # a slightly more forgiving pattern
+    m = re.findall(r'\b(?:The answer is|Answer:)\s*([A-Z])\b', output)
+    answer = m[0] if len(m) == 1 else "FAILED"
+    return answer, output
+
+def get_qwen_result_interleaved(qwen_model, segments, args):
+    output = qwen_model.generate(segments, max_new_tokens=args.max_tokens,
+                                 temperature=args.temperature, top_p=args.top_p).strip()
+    m = re.findall(r'\b(?:The answer is|Answer:)\s*([A-Z])\b', output)
+    prediction = m[0] if len(m) == 1 else "FAILED"
+    return prediction, output
 
 def get_pred_idx(prediction, choices, options):
     """
@@ -96,9 +116,9 @@ def parse_args():
     # user options
     parser.add_argument('--label', type=str, default='exp0')
     parser.add_argument('--test_split', type=str, default='val', choices=['test', 'val', 'minival'])
-    parser.add_argument('--test_number', type=int, default=10, help='GPT-3 is expensive. -1 for whole val/test set')
+    parser.add_argument('--test_number', type=int, default=3, help='GPT-3 is expensive. -1 for whole val/test set')
     parser.add_argument('--use_caption', action='store_true', help='use image captions or not')
-    parser.add_argument('--save_every', type=int, default=10, help='Save the result with every n examples.')
+    parser.add_argument('--save_every', type=int, default=3, help='Save the result with every n examples.')
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--prompt_format',
                         type=str,
@@ -121,52 +141,63 @@ def parse_args():
     parser.add_argument('--top_p', type=float, default=1.0)
     parser.add_argument('--frequency_penalty', type=float, default=0.0)
     parser.add_argument('--presence_penalty', type=float, default=0.0)
+    parser.add_argument('--llm', type=str, default="qwen")
 
     args = parser.parse_args()
     return args
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
 
     args = parse_args()
-    print('====Input Arguments====')
+    print("====Input Arguments====")
     print(json.dumps(vars(args), indent=2, sort_keys=False))
-
     random.seed(args.seed)
 
-    test, shots = load_data(args)  # problems, test question ids, shot example ids
+    # NEW ARGUMENT
+    if not hasattr(args, "llm"):
+        args.llm = "gpt"   # default
 
+    test, shots = load_data(args)
     result_file = get_result_file(args)
 
-    # load the check point
+    # Load checkpoint
     if os.path.exists(result_file):
         print("# The result file exists! We will load the check point!!!")
         check_point = json.load(open(result_file))
-        acc = check_point['acc']
-        correct = check_point['correct']
-        results = check_point['results']
-        outputs = check_point['outputs']
-        print(f"{len(results)}/{len(test)}, correct: {correct}, acc: {round(acc, 2)}%")
+        acc = check_point["acc"]
+        correct = check_point["correct"]
+        results = check_point["results"]
+        outputs = check_point["outputs"]
+        print(f"{len(results)}/{len(test)}, correct: {correct}, acc: {round(acc,2)}%")
     else:
         correct = 0
-        results = {}
-        outputs = {}
+        results, outputs = {}, {}
+
+    # If using Qwen, load it once here
+    qwen_model = None
+    if args.llm.lower() == "qwen":
+        print("Loading Qwen-VL model locally ...")
+        qwen_model = QwenLocal("Qwen/Qwen2-VL-2B-Instruct")
 
     for qid, problem in enumerate(test):
         if qid in results:
             continue
 
         choices = problem["choices"]
-        answer = problem["answer"]  # 0, 1, ..., 4
-        label = args.options[answer]  # 'A', ..., 'E'
+        answer = problem["answer"]
+        label = args.options[answer]
 
-        # generate prompt
-        prompt, base64_images = build_prompt_multimodal(shots, problem, args)
-        
-        # generate prediction
-        prediction, output = get_gpt_result(prompt, base64_images, args)  # 'A', ..., 'E'
-        pred_idx = get_pred_idx(prediction, choices, args.options)  # 0, 1, ..., 4
+        segments = build_segments_multimodal(shots, problem, args)
 
+        if args.llm.lower() == "gpt":
+            prediction, output = get_gpt_result_interleaved(segments, args)
+        elif args.llm.lower() == "qwen":
+            prediction, output = get_qwen_result_interleaved(qwen_model, segments, args)
+        else:
+            raise ValueError(f"Unknown LLM type: {args.llm}")
+
+        pred_idx = get_pred_idx(prediction, choices, args.options)
         results[qid] = pred_idx
         outputs[qid] = output
         if pred_idx == answer:
@@ -176,12 +207,12 @@ if __name__ == '__main__':
 
         if args.debug or qid < 3:
             print("##################################")
-            print(prompt, "\n")
+            print(segments, "\n")
             print("# labeled answer:", label)
             print("# predicted answer:", prediction)
             print("# predicted index:", pred_idx)
             print("# predicted output:", output)
 
         if (qid + 1) % args.save_every == 0 or (qid + 1) == len(test):
-            print(f"{len(results)}/{len(test)}, correct: {correct}, acc: {round(acc, 2)}%, saving to {result_file}")
+            print(f"{len(results)}/{len(test)}, correct: {correct}, acc: {round(acc,2)}%, saving to {result_file}")
             save_results(result_file, acc, correct, qid + 1, args, results, outputs)

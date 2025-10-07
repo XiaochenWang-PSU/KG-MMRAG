@@ -1,5 +1,9 @@
 import base64
 from io import BytesIO
+from transformers import AutoProcessor, Qwen2VLForConditionalGeneration
+import torch
+import os, json, random, re, torch, base64, io
+from PIL import Image
 
 def get_question_text(problem):
     question = problem['question']
@@ -16,6 +20,7 @@ def get_context_text(problem, use_caption):
 
 def get_context_multimodal(problem, use_caption):
     hint = problem['hint']
+    print(problem['image'])
     base64_image = pil2base64(problem['image']) if problem['image'] else None
     if hint == "":
         hint = "N/A"
@@ -148,6 +153,41 @@ def build_prompt(problems, shot_qids, test_qid, args):
 
     return prompt_input
 
+
+
+class QwenLocal:
+    def __init__(self, model_id="Qwen/Qwen2-VL-2B-Instruct"):
+        self.processor = AutoProcessor.from_pretrained(model_id)
+        self.model = Qwen2VLForConditionalGeneration.from_pretrained(
+            model_id, torch_dtype=torch.bfloat16,
+            device_map="auto" if torch.cuda.is_available() else None
+        )
+
+    def _decode_data_url(self, data_url):
+        if not data_url.startswith("data:"):
+            raise ValueError("Expect data URL")
+        header, b64data = data_url.split(",", 1)
+        return Image.open(io.BytesIO(base64.b64decode(b64data))).convert("RGB")
+
+    def generate(self, segments, max_new_tokens=512, temperature=0.2, top_p=0.95):
+        content, images = [], []
+        for seg in segments:
+            if seg["type"] in ("input_text", "text"):
+                content.append({"type": "text", "text": seg["text"]})
+            elif seg["type"] in ("input_image", "image"):
+                img = self._decode_data_url(seg["image_url"])
+                content.append({"type": "image"})
+                images.append(img)
+        messages = [{"role": "user", "content": content}]
+        text = self.processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
+        inputs = self.processor(text=[text], images=images, return_tensors="pt").to(self.model.device)
+        with torch.inference_mode():
+            out = self.model.generate(**inputs, max_new_tokens=max_new_tokens,
+                                      do_sample=(temperature > 0),
+                                      temperature=temperature, top_p=top_p)
+        return self.processor.decode(out[0], skip_special_tokens=True)
+        
+        
 def build_prompt_multimodal(shots, problem, args):
 
     examples = []
@@ -179,6 +219,7 @@ def build_prompt_multimodal(shots, problem, args):
     hint, base64_image = get_context_multimodal(problem, args.use_caption)
     if base64_image:
         base64_images.append(base64_image)
+    
     choice = get_choice_text(problem, args.options)
     answer = get_answer(problem, args.options)
     lecture = get_lecture_text(problem)
@@ -197,6 +238,51 @@ def build_prompt_multimodal(shots, problem, args):
     # create the prompt input
     prompt_input = '\n\n'.join(examples)
     return prompt_input, base64_images
+
+def build_segments_multimodal(shots, problem, args):
+    """
+    Returns a list of interleaved content items for the Responses API:
+      [{"type":"input_text","text":...},
+       {"type":"input_image","image_url":"data:image/jpeg;base64,..."},
+       ...]
+    Order is preserved (text, image, text, image, ...).
+    """
+
+    segments = []
+
+    def add_example(one, test_example: bool):
+        question = get_question_text(one)
+        hint, base64_image = get_context_multimodal(one, args.use_caption)
+        choice = get_choice_text(one, args.options)
+        answer = get_answer(one, args.options)
+        lecture = get_lecture_text(one)
+        solution = get_solution_text(one)
+
+        # Build the full example text block exactly as before
+        example_text = create_one_example(
+            args.prompt_format, question, hint, choice, answer, lecture, solution,
+            test_example=test_example
+        )
+        # 1) push the text
+        segments.append({"type": "input_text", "text": example_text})
+
+        # 2) then, if there's an image for this example, push it right after
+        if base64_image:
+            segments.append({
+                "type": "input_image",
+                "image_url": f"data:image/jpeg;base64,{base64_image}"
+            })
+
+    # n-shot examples
+    for shot in shots:
+        add_example(shot, test_example=False)
+        add_example(shot, test_example=False)
+
+    # test example
+    add_example(problem, test_example=True)
+
+    return segments
+
 
 def pil2base64(img):
     buf = BytesIO()
