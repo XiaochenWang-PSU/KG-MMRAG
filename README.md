@@ -25,6 +25,19 @@ Note:
 - `run_gpt.py` use image's caption as input.
 - `run_multimodal_gpt.py` use image as input.
 
+## MKG_Analogy Folder
+Reference: [https://github.com/zjunlp/MKG_Analogy](https://github.com/zjunlp/MKG_Analogy)
+
+To use GPT, prepare your API key:
+```
+export OPENAI_API_KEY="your_api_key_here"
+```
+
+To run GPT model
+```
+python3 run_gpt.py
+```
+
 ## Useful Resources
 
 ### Papers:
