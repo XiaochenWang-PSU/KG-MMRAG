@@ -4,69 +4,12 @@ import os, io,  base64, glob, random
 from PIL import Image
 from openai import OpenAI
 from utils import *
+from retrieval import SimpleRetriever
+from prompt_builder import *
+import argparse
 
 client = OpenAI()
 
-# Transform path to base64 for Open API prompt
-def img_to_data_url(path):
-    """Load image, (optionally) downscale, and return data URL for OpenAI vision input."""
-    with Image.open(path) as im:
-        # (Optional) downscale very large images to save tokens:
-        im.thumbnail((1024, 1024))
-        buf = io.BytesIO()
-        im.save(buf, format="JPEG")
-    b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
-    return f"data:image/jpeg;base64,{b64}"
-
-# Build Prompt
-def build_multimodal_input_for_sample(sample, entity2text):
-    """
-    Returns a Responses API 'content' list mixing text and (optional) images,
-    following mode semantics:
-      mode 0: (T1, T2) -> (I1, ?)
-      mode 1: (I1, I2) -> (T1, ?)
-      mode 2: (I1, T1) -> (I2, ?)
-    """
-    head, tail = sample["example"][0], sample["example"][1]
-    question     = sample["question"]
-    mode       = int(sample["mode"])
-    content = []
-
-    # Systematic header
-    description = (
-        "You are solving a knowledge-graph analogy with one exemplar and one question.\n"
-        "Interpret (T) as text-only, (I) as image-only.\n"
-        "You have to infer the relation hinted by the exemplar to get the relation between question and answer"
-    )
-    content.append({"type": "input_text", "text": description})
-
-    if mode == 0:
-        # (T1, T2) -> (I1, ?)
-        head_txt = entity2text[head]
-        tail_txt = entity2text[tail]
-        content.append({"type": "input_text", "text": f"Exemplar (T1, T2): head = {head_txt} and tail = {tail_txt}"})
-        content.append({"type": "input_text", "text": "Question (I1, ?): head = "})
-        content.append({"type": "input_image", "image_url": img_to_data_url(first_jpg_path(question, "images_subset_inference"))})
-        content.append({"type": "input_text", "text": f" and tail = ?"})
-    elif mode == 1:
-        # (I1, I2) -> (T1, ?)
-        question_txt = entity2text[question]
-        content.append({"type": "input_text", "text": f"Exemplar (T1, T2): head = "})
-        content.append({"type": "input_image", "image_url": img_to_data_url(first_jpg_path(head, "images_subset_inference"))})
-        content.append({"type": "input_text", "text": f" and tail = "})
-        content.append({"type": "input_image", "image_url": img_to_data_url(first_jpg_path(tail, "images_subset_inference"))})
-        content.append({"type": "input_text", "text": f"Question (T1, ?): head= {question_txt} and tail = ?"})
-    else:
-        # (I1, T1) -> (I2, ?)
-        tail_txt = entity2text[tail]
-        content.append({"type": "input_text", "text": f"Exemplar (T1, T2): head = "})
-        content.append({"type": "input_image", "image_url": img_to_data_url(first_jpg_path(head, "images_subset_inference"))})
-        content.append({"type": "input_text", "text": f" and tail = {tail_txt}"})
-        content.append({"type": "input_text", "text": "Question (I2, ?): head = "})
-        content.append({"type": "input_image", "image_url": img_to_data_url(first_jpg_path(question, "images_subset_inference"))})
-        content.append({"type": "input_text", "text": f" and  tail = ?"})
-
-    return content
 
 # Get Metric
 def get_metrics(rankings, answers):
@@ -146,34 +89,45 @@ Task:
         text = schema
     )
     return json.loads(resp.output_text.strip())
-
-
-# Read test 
-with open("dataset/MARS/test.json", "r", encoding="utf-8") as f:
-    lines = f.readlines()
-    test_samples = [json.loads(line) for line in lines]
     
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--retriever', type=str, default="SimpleRetriever", help='Retriever') # "SimpleRetriver" or None
+    args = parser.parse_args()
 
-entity2text = read_txt("dataset/MarKG/entity2text.txt")
-candidates = []
+    # Inference Data Initialization
+    with open("dataset/MARS/test.json", "r", encoding="utf-8") as f:
+        lines = f.readlines()
+        test_samples = [json.loads(line) for line in lines]
+        
+    entity2text = read_txt("dataset/MarKG/entity2text.txt")
+    relation2text = read_txt("dataset/MarKG/relation2text.txt")
+    candidates = []
+    for sample in test_samples[:100]:
+        candidates.append(entity2text[sample["answer"]])
+    test_samples = random.sample(test_samples, 5)
+    
+    # Retriever Build
+    triplets = load_triplets("dataset/MarKG/wiki_tuple_ids.txt")
+    triplets = random.sample(triplets, 10)
+    retriever = SimpleRetriever(triplets, entity2text, relation2text, "clip-ViT-B-32")
 
-for sample in test_samples[:100]:
-    candidates.append(entity2text[sample["answer"]])
+    rankings = []
+    answers = []
 
-test_samples = random.sample(test_samples, 5)
+    for sample in test_samples:
+        content = build_multimodal_input_for_sample(sample, entity2text)
+        if args.retriever:
+            retrieved_items = retriever.search([sample["example"][0], sample["example"][1], sample["question"]], 3, sample["mode"])
+            rag_prompt = build_rag_prompt(retrieved_items, entity2text, relation2text)
+            content = rag_prompt + content
+        rankings.append(rank_candidates_with_gpt(content, candidates)["ranking"])
+        answers.append(entity2text[sample["answer"]])
+        print(answers[-1], rankings[-1])
 
-rankings = []
-answers = []
-
-for sample in test_samples:
-    content = build_multimodal_input_for_sample(sample, entity2text)
-    rankings.append(rank_candidates_with_gpt(content, candidates)["ranking"])
-    answers.append(entity2text[sample["answer"]])
-    print(answers[-1], rankings[-1])
-
-metrics = get_metrics(rankings, answers)
-print("Hits@1", metrics[0])
-print("Hits@3", metrics[1])
-print("Hits@5", metrics[2])
-print("Hits@10", metrics[3])
-print("MRR", metrics[4])
+    metrics = get_metrics(rankings, answers)
+    print("Hits@1", metrics[0])
+    print("Hits@3", metrics[1])
+    print("Hits@5", metrics[2])
+    print("Hits@10", metrics[3])
+    print("MRR", metrics[4])

@@ -7,7 +7,6 @@ import numpy as np
 import numpy
 import torch
 import random
-print(torch.__version__)
 from sentence_transformers import SentenceTransformer
 
 class SimpleRetriever:
@@ -120,13 +119,3 @@ class SimpleRetriever:
             })
         
         return out
-
-triplets = load_triplets("dataset/MarKG/wiki_tuple_ids.txt")
-triplets = random.sample(triplets, 10)
-
-entity2text = read_txt("dataset/MarKG/entity2text.txt")
-relation2text = read_txt("dataset/MarKG/relation2text.txt")
-
-query =  ["Q65386997", "Q44705078", "Q271960"] # first question in test.json file
-retriever = SimpleRetriever(triplets, entity2text, relation2text, "clip-ViT-B-32")
-print(retriever.search(query, 5, 0))
