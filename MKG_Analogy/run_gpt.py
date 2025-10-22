@@ -10,8 +10,6 @@ client = OpenAI()
 # Transform path to base64 for Open API prompt
 def img_to_data_url(path):
     """Load image, (optionally) downscale, and return data URL for OpenAI vision input."""
-    if not path:
-        print("Fuck")
     with Image.open(path) as im:
         # (Optional) downscale very large images to save tokens:
         im.thumbnail((1024, 1024))
