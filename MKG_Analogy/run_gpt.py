@@ -4,7 +4,7 @@ import os, io,  base64, glob, random
 from PIL import Image
 from openai import OpenAI
 from utils import *
-from retrieval import SimpleRetriever
+from retrieval import *
 from prompt_builder import *
 import argparse
 
@@ -92,7 +92,9 @@ Task:
     
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--retriever', type=str, default="SimpleRetriever", help='Retriever') # "SimpleRetriver" or None
+    # "SimpleMultimodalRetriever" or "SimpleTextRetriever" or "RandomRetriever" or None
+    parser.add_argument('--retriever', type=str, default="SimpleMultimodalRetriever", help='Retriever') 
+    
     args = parser.parse_args()
 
     # Inference Data Initialization
@@ -110,8 +112,14 @@ if __name__ == "__main__":
     # Retriever Build
     triplets = load_triplets("dataset/MarKG/wiki_tuple_ids.txt")
     triplets = random.sample(triplets, 10)
-    retriever = SimpleRetriever(triplets, entity2text, relation2text, "clip-ViT-B-32")
 
+    if args.retriever == "SimpleMultimodalRetriever":
+        retriever = SimpleMultimodalRetriever(triplets, entity2text, relation2text, "clip-ViT-B-32")
+    elif args.retriever == "SimpleTextRetriever":
+        retriever = SimpleTextRetriever(triplets, entity2text, relation2text, "sentence-transformers/all-MiniLM-L6-v2")
+    elif args.retriever == "RandomRetriever":
+        retriever = RandomRetriever(triplets)
+        
     rankings = []
     answers = []
 

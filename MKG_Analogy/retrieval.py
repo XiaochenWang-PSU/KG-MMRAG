@@ -9,9 +9,9 @@ import torch
 import random
 from sentence_transformers import SentenceTransformer
 
-class SimpleRetriever:
-    # In this retrieval, for every triplet (head, relation, tail), we will take average 
-    def __init__(self, retrieval_dataset, entity2text, relation2text, model_name, batch_size=32):
+class SimpleMultimodalRetriever:
+    # In this retrieval, for every triplet (head, relation, tail), we will take average of embedding
+    def __init__(self, retrieval_dataset, entity2text, relation2text, model_name="clip-ViT-B-32", batch_size=32):
         # retrieval_dataset = [[h1, r1, t1], [h2, r2, t2], ...]
 
         # Initialization
@@ -116,6 +116,97 @@ class SimpleRetriever:
                 "index": i,
                 "item": self.retrieval_dataset[i],
                 "score": float(s),
+            })
+        
+        return out
+
+class SimpleTextRetriever:
+    # In this retrieval, for every triplet (head, relation, tail), we will text embedding of string head + relation + tail
+    def __init__(self, retrieval_dataset, entity2text, relation2text, model_name="sentence-transformers/all-MiniLM-L6-v2", batch_size=32):
+        # retrieval_dataset = [[h1, r1, t1], [h2, r2, t2], ...]
+
+        # Initialization
+        self.retrieval_dataset = retrieval_dataset
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.model = SentenceTransformer(model_name, device=self.device)
+        self.entity2text = entity2text
+
+        # Get texts from triplet
+        self.texts = []
+        for idx, triplet in enumerate(self.retrieval_dataset):
+            head, relation, tail = triplet
+
+            text = ""
+
+            if head in entity2text:
+                text += entity2text[head]
+                text += " "
+            
+            if relation in relation2text:
+                text += relation2text[relation]
+                text += " "
+            
+            if tail in entity2text:
+                text += entity2text[tail]
+            
+            self.texts.append(text)
+
+        # Get text embedding
+        self.retrieval_embeddings = self.model.encode(self.texts, batch_size=batch_size, convert_to_tensor=True, show_progress_bar=False)
+
+        # Normalize for cosine similarity via dot product
+        self.retrieval_embeddings = torch.nn.functional.normalize(self.retrieval_embeddings, p=2, dim=1)
+
+    def search(self, query, k, mode):
+        # query: [head, tail, question]. Do not have relation since MARS do not allow to provide relation to model.
+        # mode is defined as follow
+        #   mode 0: (T1, T2) -> (I1, ?)
+        #   mode 1: (I1, I2) -> (T1, ?)
+        #   mode 2: (I1, T1) -> (I2, ?)
+
+        query_embeddings = []
+        head, tail, question = query
+        text = self.entity2text[head] + " " + self.entity2text[tail] + " " + self.entity2text[question]
+        
+        query_embedding = self.model.encode([text], convert_to_tensor=True, show_progress_bar=False)
+        query_embedding = torch.nn.functional.normalize(query_embedding, p=2, dim=0)  
+        scores = (self.retrieval_embeddings @ query_embedding.T).flatten()
+        vals, idxs = torch.topk(scores, k=k, largest=True, sorted=True)
+
+        out = []
+        for rank, (i, s) in enumerate(zip(idxs.tolist(), vals.tolist()), start=1):
+            out.append({
+                "rank": rank,
+                "index": i,
+                "item": self.retrieval_dataset[i],
+                "score": float(s),
+            })
+        
+        return out
+
+class RandomRetriever:
+    # In this retrieval, for every triplet (head, relation, tail), we will take random
+    def __init__(self, retrieval_dataset):
+        # retrieval_dataset = [[h1, r1, t1], [h2, r2, t2], ...]
+
+        # Initialization
+        self.retrieval_dataset = retrieval_dataset
+
+    def search(self, query, k, mode):
+        # query: [head, tail, question]. Do not have relation since MARS do not allow to provide relation to model.
+        # mode is defined as follow
+        #   mode 0: (T1, T2) -> (I1, ?)
+        #   mode 1: (I1, I2) -> (T1, ?)
+        #   mode 2: (I1, T1) -> (I2, ?)
+        random_idx = random.sample([i for i in range(len(self.retrieval_dataset))], k)
+        
+        out = []
+        for rank, i in enumerate(random_idx):
+            out.append({
+                "rank": rank + 1,
+                "index": i,
+                "item": self.retrieval_dataset[i],
+                "score": rank + 1,
             })
         
         return out
