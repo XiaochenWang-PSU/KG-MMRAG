@@ -11,6 +11,7 @@ def img_to_data_url(path):
         # (Optional) downscale very large images to save tokens:
         im.thumbnail((1024, 1024))
         buf = io.BytesIO()
+        im = im.convert("RGB")
         im.save(buf, format="JPEG")
     b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
     return f"data:image/jpeg;base64,{b64}"
