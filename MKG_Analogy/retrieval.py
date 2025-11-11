@@ -30,17 +30,21 @@ class SimpleMultimodalRetriever:
 
         for idx, triplet in enumerate(self.retrieval_dataset):
             head, relation, tail = triplet
-            if head in entity2text:
-                self.text2retrieval[len(self.text)] = idx
-                self.text.append(entity2text[head])
+            t = ""
 
-            if tail in entity2text:
-                self.text2retrieval[len(self.text)]= idx
-                self.text.append(entity2text[tail])
+            if head in entity2text:
+                t += entity2text[head]
+                t += " "
 
             if relation in relation2text:
-                self.text2retrieval[len(self.text)] = idx
-                self.text.append(relation2text[relation])
+                t += relation2text[relation]
+                t += " "
+
+            if tail in entity2text:
+                t += entity2text[tail]
+
+            self.text2retrieval[len(self.text)]= idx
+            self.text.append(t)
 
             if first_jpg_path(head, "images_subset_kg"):
                 self.image2retrieval[len(self.image)] = idx 
@@ -105,7 +109,7 @@ class SimpleMultimodalRetriever:
                 query_embeddings.append(self.model.encode([im], convert_to_tensor=True, show_progress_bar=False))
 
         query_embedding = torch.stack(query_embeddings, dim = 0).mean(dim = 0)
-        query_embedding = torch.nn.functional.normalize(query_embedding, p=2, dim=0)  
+        query_embedding = torch.nn.functional.normalize(query_embedding, p=2, dim=1)  
         scores = (self.retrieval_embeddings @ query_embedding.T).flatten()
         vals, idxs = torch.topk(scores, k=k, largest=True, sorted=True)
 
@@ -169,7 +173,7 @@ class SimpleTextRetriever:
         text = self.entity2text[head] + " " + self.entity2text[tail] + " " + self.entity2text[question]
         
         query_embedding = self.model.encode([text], convert_to_tensor=True, show_progress_bar=False)
-        query_embedding = torch.nn.functional.normalize(query_embedding, p=2, dim=0)  
+        query_embedding = torch.nn.functional.normalize(query_embedding, p=2, dim=1)  
         scores = (self.retrieval_embeddings @ query_embedding.T).flatten()
         vals, idxs = torch.topk(scores, k=k, largest=True, sorted=True)
 
