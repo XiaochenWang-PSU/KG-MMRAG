@@ -126,7 +126,14 @@ class SimpleMultimodalRetriever(BaseRetriever):
         # Normalize for cosine similarity via dot product
         self.retrieval_embeddings = torch.nn.functional.normalize(self.retrieval_embeddings, p=2, dim=1)
 
-    def search(self, query_text, query_image, k):
+    def search(self, sample, k):
+        if "image_path" in sample:
+            with Image.open(sample["image_path"]) as im:
+                query_image = im.convert("RGB")
+        else:
+            query_image = sample["image"]
+        query_text = sample["question"].lower()
+
         query_embeddings = []
         query_embeddings.append(self.model.encode([query_text], convert_to_tensor=True, show_progress_bar=False))
         query_embeddings.append(self.model.encode([query_image], convert_to_tensor=True, show_progress_bar=False))
@@ -145,7 +152,3 @@ class SimpleMultimodalRetriever(BaseRetriever):
             })
         
         return out
-
-    
-retriever = SimpleMultimodalRetriever(kg_path="MedMKG_huggingface/MedMKG.csv", image_map_path="MedMKG_huggingface/image_mapping.csv")
-print(retriever.search("Mass of body region (finding)", retriever.images[0], k=2))

@@ -3,6 +3,7 @@ from data import MedicalVQADataset
 from prompt_builder import *
 from openai import OpenAI
 from utils import *
+from retrieval import *
 
 client = OpenAI()
 
@@ -17,8 +18,8 @@ def get_gpt_result(prompt):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    # None
-    parser.add_argument('--retriever', type=str, default=None, help='Retriever') 
+    # None, "SimpleMultimodalRetriever"
+    parser.add_argument('--retriever', type=str, default="SimpleMultimodalRetriever", help='Retriever') 
     # 'slake', 'vqa_rad', 'pathvqa'
     parser.add_argument("--dataset", type=str, default='slake')
 
@@ -26,11 +27,18 @@ if __name__ == "__main__":
 
     vqa_data = MedicalVQADataset(args.dataset, split="test")
 
+    if args.retriever == "SimpleMultimodalRetriever":
+        retriever = SimpleMultimodalRetriever(kg_path="MedMKG_huggingface/MedMKG.csv", image_map_path="MedMKG_huggingface/image_mapping.csv", model_name="clip-ViT-B-32")
+   
     outputs = []
     answers = []
 
     for sample in vqa_data.samples[:10]:
         prompt = build_multimodal_input_for_sample(sample)
+        if args.retriever:
+            retrieved_items = retriever.search(sample, 3)
+            rag_prompt = build_rag_prompt(retrieved_items, retriever.image_id_to_path)
+            prompt[1]["content"] = rag_prompt + prompt[1]["content"]
         outputs.append(int(get_gpt_result(prompt)))
         answers.append(int(sample["answer"]))
 

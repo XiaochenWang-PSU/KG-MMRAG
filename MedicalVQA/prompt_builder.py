@@ -56,3 +56,19 @@ def build_multimodal_input_for_sample(sample):
             ],
         },
     ]
+
+# Build Prompt for Retrieved Item
+def build_rag_prompt(retrieved_items, image_id_to_path):
+    rag_prompt = []
+    rag_prompt.append({"type": "input_text", "text": f"You can use the following knowledge-graph triples as evidence to solve the following question"})
+    for (i, item) in enumerate(retrieved_items):
+        triplet = item["item"]
+        head, relation, tail = triplet.head_name, triplet.relation, triplet.tail_name
+        rag_prompt.append({"type": "input_text", "text": f"Triplet {i+1}: (head, relation, tail) = ({head}, {relation}, {tail})"})
+
+        if triplet.head in image_id_to_path and os.path.exists(image_id_to_path[triplet.head]):
+            with Image.open(image_id_to_path[triplet.head]) as im:     
+                rag_prompt.append({"type": "input_text", "text": f"Image for head of triplet {i+1}"})
+                rag_prompt.append({"type": "input_image", "image_url": img_to_data_url(im)})
+
+    return rag_prompt
