@@ -152,3 +152,62 @@ class SimpleMultimodalRetriever(BaseRetriever):
             })
         
         return out
+
+class SimpleTextRetriever(BaseRetriever):
+    def __init__(self, kg_path: str, image_map_path: str = "image_mapping.csv", model_name="clip-ViT-B-32", batch_size=32):
+        super().__init__(kg_path, image_map_path)
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.model = SentenceTransformer(model_name, device=self.device)
+
+        self.texts = []
+
+        for idx, triplet in enumerate(self.triplets[:100]):   
+            text = ""
+
+            if "image_" not in triplet.head_name.lower():
+                text += triplet.head_name.lower()
+                text += " "
+            
+            text += triplet.relation.lower() + " " + triplet.tail_name.lower()
+            self.texts.append(text)
+
+        self.retrieval_embeddings = self.model.encode(self.texts, batch_size=batch_size, convert_to_tensor=True, show_progress_bar=False)
+
+        # Normalize for cosine similarity via dot product
+        self.retrieval_embeddings = torch.nn.functional.normalize(self.retrieval_embeddings, p=2, dim=1)
+
+    def search(self, sample, k):
+
+        query_text = sample["question"].lower()
+
+        query_embedding = self.model.encode([query_text], convert_to_tensor=True, show_progress_bar=False)
+        query_embedding = torch.nn.functional.normalize(query_embedding, p=2, dim=1)  
+        scores = (self.retrieval_embeddings @ query_embedding.T).flatten()
+        vals, idxs = torch.topk(scores, k=k, largest=True, sorted=True)
+
+        out = []
+        for rank, (i, s) in enumerate(zip(idxs.tolist(), vals.tolist()), start=1):
+            out.append({
+                "rank": rank,
+                "index": i,
+                "item": self.triplets[i],
+                "score": float(s),
+            })
+        
+        return out
+
+
+class RandomRetriever(BaseRetriever):
+    def search(self, sample, k):
+        random_idx = random.sample([i for i in range(len(self.triplets))], k)
+
+        out = []
+        for rank, i in enumerate(random_idx):
+            out.append({
+                "rank": rank + 1,
+                "index": i,
+                "item": self.triplets[i],
+                "score": rank + 1,
+            })
+        
+        return out

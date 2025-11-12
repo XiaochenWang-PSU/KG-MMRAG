@@ -18,7 +18,7 @@ def get_gpt_result(prompt):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    # None, "SimpleMultimodalRetriever"
+    # None, "SimpleMultimodalRetriever", "SimpleTextRetriever", "RandomRetriever"
     parser.add_argument('--retriever', type=str, default="SimpleMultimodalRetriever", help='Retriever') 
     # 'slake', 'vqa_rad', 'pathvqa'
     parser.add_argument("--dataset", type=str, default='slake')
@@ -29,7 +29,11 @@ if __name__ == "__main__":
 
     if args.retriever == "SimpleMultimodalRetriever":
         retriever = SimpleMultimodalRetriever(kg_path="MedMKG_huggingface/MedMKG.csv", image_map_path="MedMKG_huggingface/image_mapping.csv", model_name="clip-ViT-B-32")
-   
+    elif args.retriever == "RandomRetriever":
+        retriever = RandomRetriever(kg_path="MedMKG_huggingface/MedMKG.csv", image_map_path="MedMKG_huggingface/image_mapping.csv")
+    elif args.retriever == "SimpleTextRetriever":
+        retriever = SimpleTextRetriever(kg_path="MedMKG_huggingface/MedMKG.csv", image_map_path="MedMKG_huggingface/image_mapping.csv", model_name="sentence-transformers/all-MiniLM-L6-v2")
+    
     outputs = []
     answers = []
 
