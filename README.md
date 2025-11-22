@@ -52,6 +52,19 @@ To run GPT model
 python3 run_gpt.py
 ```
 
+## FactVQA Folder
+Reference: [https://github.com/wangpengnorman/FVQA](https://github.com/wangpengnorman/FVQA)
+
+To use GPT, prepare your API key:
+```
+export OPENAI_API_KEY="your_api_key_here"
+```
+
+To run GPT model
+```
+python3 run_gpt.py
+```
+
 ## Useful Resources
 
 ### Papers:
